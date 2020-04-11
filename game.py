@@ -1,11 +1,11 @@
 import numpy as np
 import pytesseract as pt
-from PIL import ImageGrab
+from PIL import ImageGrab, Image
 import cv2
 import pyautogui
 import sys
 import time
-from dqn import dqn
+
 
 
 # gameScreen.reshape(number of images(4 for stack), height(620), width(450), dimension(1))
@@ -14,44 +14,9 @@ class game:
         # path of tesseract executable
         pt.pytesseract.tesseract_cmd = 'C:\\Program Files\\Tesseract-OCR\\tesseract'
         print('Game world initialized.')
-        self.agent = dqn()
-
         # starting pos for catcher (480,795)
-        pyautogui.moveTo(480, 795)
-
-    def trainGame(self, epoch):
-        # windowed mode for the game env, at the left position of your main screen.
-        # convert is to get grayscle image
-        statelist = []
-        while(epoch):
-            gameScreen = np.array(ImageGrab.grab(
-                bbox=(250, 250, 700, 870)).convert('L'))
-
-            statelist.append(gameScreen)
-            cv2.imshow('window', gameScreen)
-            epoch -= 1
-            if cv2.waitKey(25) & 0xFF == ord('q'):
-                cv2.destroyAllWindows()
-                break
-            # one game episode/gameover
-            if self.gameOver(gameScreen):
-                self.restartGame()
-            print('****GETTING QVALUE****')
-            gameScreen = gameScreen.reshape(1, 620, 450, 1)
-            print(self.agent.getQvalue(gameScreen))
-
-    def playGame(self):
-        statelist = []
-        gameScreen = np.array(ImageGrab.grab(
-            bbox=(250, 250, 700, 870)).convert('L'))
-        while(not self.gameOver(gameScreen)):
-            gameScreen = np.array(ImageGrab.grab(
-                bbox=(250, 250, 700, 870)).convert('L'))
-            statelist.append(gameScreen)
-            cv2.imshow('window', gameScreen)
-            if cv2.waitKey(25) & 0xFF == ord('q'):
-                cv2.destroyAllWindows()
-                break
+        self.spritepos = (480, 795)
+        pyautogui.moveTo(self.spritepos)
 
     def restartGame(self):
         print('Restarting the game..')
@@ -64,7 +29,11 @@ class game:
 
     def gameOver(self, screen):
         screen = screen[:200, :400]
-        gameOverStr = pt.image_to_string(screen, lang='eng')
+        i = Image.fromarray(screen,'L')
+        i = np.array(i)
+        print(type(i))
+        print(i)
+        gameOverStr = pt.image_to_string(i, lang='eng')
         # while(True):
         #     cv2.imshow('window', screen)
         #     if cv2.waitKey(25) & 0xFF == ord('q'):
@@ -82,8 +51,25 @@ class game:
 
     def leftDrag(self):
         print('dragging left')
-        return pyautogui.dragRel(-100, 0, duration=0.5)  # drag left
+        pyautogui.moveTo(self.spritepos)
+        pyautogui.dragRel(-100, 0, duration=0.5)  # drag left
+        self.spritepos = pyautogui.position()
+        
+
 
     def rightDrag(self):
         print('dragging right')
-        return pyautogui.dragRel(100, 0, duration=0.5)  # drag right
+        pyautogui.moveTo(self.spritepos)
+        pyautogui.dragRel(100, 0, duration=0.5)  # drag right
+        self.spritepos = pyautogui.position()
+
+    def takeAction(self,index):
+        if index == 0:
+            return self.leftDrag()
+        elif index == 1:
+            return self.rightDrag()
+        elif index == 2:
+            return self.noDrag()
+        else:
+            return None
+            

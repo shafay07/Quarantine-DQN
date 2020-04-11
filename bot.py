@@ -7,7 +7,7 @@ import cv2
 from game import game
 from dqn import dqn
 # Constant hyper-parameters
-EPOCH = 20
+NUM_EPISODES = 50
 TRAIN = True
 
 # helper funtion to get screen-cordinates, call it to get real time cordinates
@@ -26,11 +26,11 @@ def getScreenCordinates():
 
 def main():
     # getScreenCordinates()
-    env = game()
+    agent = dqn()
     if TRAIN:
-        env.trainGame(EPOCH)
+        agent.trainModel(NUM_EPISODES)
     else:
-        env.playGame()
+        agent.playModel()
 
 
 if __name__ == "__main__":
