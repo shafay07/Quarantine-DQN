@@ -6,44 +6,58 @@ import pyautogui
 import sys
 import time
 
+from selenium import webdriver
+from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
 
 
 # gameScreen.reshape(number of images(4 for stack), height(620), width(450), dimension(1))
 class game:
     def __init__(self):
-        # path of tesseract executable
-        pt.pytesseract.tesseract_cmd = 'C:\\Program Files\\Tesseract-OCR\\tesseract'
+        self.initSession()
+
         print('Game world initialized.')
         # starting pos for catcher (480,795)
         self.spritepos = (480, 795)
         pyautogui.moveTo(self.spritepos)
 
-    def restartGame(self):
-        print('Restarting the game..')
-        time.sleep(2)
-        pyautogui.click(x=92, y=65)
+    def initSession(self):
+        self.d = DesiredCapabilities.CHROME
+        self.d['loggingPrefs'] = { 'browser':'ALL' }
+        self.driver = webdriver.Chrome('D:/chromedriver.exe',desired_capabilities=self.d)
+        # load the desired webpage
+        self.driver.get('https://quarantine-play.firebaseapp.com/')
         time.sleep(2)
         pyautogui.click(x=475, y=565)
-        time.sleep(2)
+        time.sleep(1)
         pyautogui.moveTo(480, 795)
 
-    def gameOver(self, screen):
-        screen = screen[:200, :400]
-        i = Image.fromarray(screen,'L')
-        i = np.array(i)
-        print(type(i))
-        print(i)
-        gameOverStr = pt.image_to_string(i, lang='eng')
-        # while(True):
-        #     cv2.imshow('window', screen)
-        #     if cv2.waitKey(25) & 0xFF == ord('q'):
-        #         cv2.destroyAllWindows()
-        #         break
 
-        if gameOverStr == 'GAMEOVER':
-            return True
-        else:
-            return False
+    def restartGame(self):
+        print('Restarting the game..')
+        self.initSession()
+
+    def gameOver(self):
+        # using selenium, enable browser logging
+        logs = self.driver.get_log('browser')
+        context={
+            'status':False,
+            'score':0
+        }
+        if logs:
+            record = logs[-1]
+            score_str = record.get("message").split('\"')[1]
+            score_int = score_str.split(': ')[1]
+            if len(score_int) <= 3:
+                score_int = int(score_int)
+            context['status'] = False
+            context['score'] = score_int
+            return context
+        elif not logs:
+            print('Game over...')
+            self.driver.quit()  
+            context['status'] = True
+            return context
+            
 
     def noDrag(self):
         print('taking no action')
@@ -55,7 +69,6 @@ class game:
         pyautogui.dragRel(-100, 0, duration=0.5)  # drag left
         self.spritepos = pyautogui.position()
         
-
 
     def rightDrag(self):
         print('dragging right')

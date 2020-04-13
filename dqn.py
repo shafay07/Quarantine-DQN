@@ -1,4 +1,5 @@
 import numpy as np
+import matplotlib.pyplot as plt
 import math
 import random
 from keras.models import Sequential
@@ -18,15 +19,17 @@ from epsilongreedy import EpsilonGreedyStrategy
 
 # hyper parameters
 NUM_ACTIONS = 3
-IMAGE_SIZE = (620, 450, 1)
+IMAGE_SIZE = (600, 440, 1)
 ACTION_SPACE_SIZE = 3
-BATCH_SIZE = 256
+# BATCH_SIZE = 256
+BATCH_SIZE = 20
 GAMMA = 0.999
 EPS_START = 1
 EPS_END = 0.01
 EPS_DECAY = 0.001
-TARGET_UPDATE = 10 # update target_network every 10 episodes
-MEMORY_SIZE = 100000
+TARGET_UPDATE = 2 # update target_network every 10 episodes
+# MEMORY_SIZE = 100000
+MEMORY_SIZE = 1000
 LEARNING_RATE = 0.001
 
 # one episode is one complete gameplay from start till end state(gameover state)
@@ -34,12 +37,14 @@ class dqn:
     def __init__(self):
         print('Initializing DQN Agent')
         self.current_step = 0
-        
+        self.reward = 0
         self.replaymemory = replaymemory(MEMORY_SIZE)
         self.strategy = EpsilonGreedyStrategy(EPS_START,EPS_END,EPS_DECAY)
         self.game = game()
         # main model,model for fitting
         self.model = self.createModel()
+        # self.target_model = self.createModel()
+        # self.saveModel('target_model',self.target_model)
         # target network, clone of main model for predictions
         self.target_model = self.loadModel('target_model')
         self.experience = namedtuple('Experience', ('state', 'action', 'next_state', 'reward'))
@@ -92,53 +97,62 @@ class dqn:
     def trainModel(self, num_episodes):
         # windowed mode for the game env, at the left position of your main screen.
         # convert is to get grayscle image
-        episode_duration = []
+        episode_duration_list = []
+        episode_reward_list = []
         for episode in range(num_episodes):
-            # restart game for every episode
-            self.game.restartGame
-            self.reward = 0
+            print('For loop entry, starting...')
+            # starttime for an episode
+            episode_start = time.time()
             while(True):
                 # grabs the game screen
                 gameScreen = np.array(ImageGrab.grab(
-                    bbox=(250, 250, 700, 870)).convert('L'))
-                print(type(gameScreen))
+                    bbox=(260, 250, 700, 850)).convert('L'))
                 cv2.imshow('window', gameScreen)
+                current_state = gameScreen.reshape(1, 600, 440, 1)
                 if cv2.waitKey(25) & 0xFF == ord('q'):
                     cv2.destroyAllWindows()
                     break
 
                 # choose action based of exploration vs exploitation
                 rate = self.strategy.get_exploration_rate(self.current_step)
+                rand = random.random()
                 self.current_step += 1
-                if rate > random.random():
+                if rate > rand:
                     # taking random action based on epsilon
                     action = random.randrange(NUM_ACTIONS)
-                    print('***Taking random action***')
+                    print('***Random action***')
                     self.game.takeAction(action)
                 else:
-                    print('****GETTING QVALUE****')
-                    gameScreen = gameScreen.reshape(1, 620, 450, 1)
-                    qvalues = self.getQvalue(gameScreen)
+                    print('***Qvalue action***')
+                    qvalues = self.getQvalue(current_state)
                     action = np.argmax(qvalues[0])
                     self.game.takeAction(action)
 
                 # one game episode/gameover
-                if self.game.gameOver(gameScreen):
-                    self.reward = 0
+                gameOver_Status = self.game.gameOver()
+                if gameOver_Status['status']:
+                    episode_end = time.time()
+                    episode_duration = episode_end-episode_start
+                    episode_duration_list.append(episode_duration)
+                    episode_reward_list.append(self.reward)
                     self.game.restartGame()
                     break;
                 else:
-                    self.reward += 1
-                    print(self.reward)
+                    self.reward = gameOver_Status['score']
                     next_state = np.array(ImageGrab.grab(
-                    bbox=(250, 250, 700, 870)).convert('L'))
-                    next_state = next_state.reshape(1, 620, 450, 1)
-                    e = self.experience(gameScreen,action,next_state,self.reward)
+                    bbox=(260, 250, 700, 850)).convert('L'))
+                    next_state = next_state.reshape(1, 600, 440, 1)
+                    e = self.experience(current_state,action,next_state,self.reward)
                     self.replaymemory.push(self.experience)
-                    print(e)
+        # plot final results
+        self.plotEpisodeDuration(num_episodes,episode_duration_list)
+        self.plotEpisodeReward(num_episodes,episode_reward_list)
+
 
                 
+    
             
+    # model to test the DQN aka play game
     def playModel(self):
         statelist = []
         gameScreen = np.array(ImageGrab.grab(
@@ -156,3 +170,21 @@ class dqn:
     # estimate q-value given a state
     def getQvalue(self, state):
         return self.target_model.predict(state)
+
+    # plot graph for episode duration/episodes
+    def plotEpisodeDuration(self,num_episodes,episode_duration):
+        x = range(0, num_episodes)
+        y = episode_duration
+        plt.plot(x,y)
+        plt.xlabel('Episode')
+        plt.ylabel('Episode duration')
+        plt.show()
+
+    # plot graph for episode duration/reward
+    def plotEpisodeReward(self,num_episodes,episode_reward):
+        x = range(0, num_episodes)
+        y = episode_reward
+        plt.plot(x,y)
+        plt.xlabel('Episode')
+        plt.ylabel('Episode reward')
+        plt.show()
