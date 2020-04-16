@@ -21,15 +21,13 @@ from epsilongreedy import EpsilonGreedyStrategy
 NUM_ACTIONS = 3
 IMAGE_SIZE = (600, 440, 1)
 ACTION_SPACE_SIZE = 3
-# BATCH_SIZE = 256
-BATCH_SIZE = 20
+BATCH_SIZE = 64
 GAMMA = 0.999
 EPS_START = 1
 EPS_END = 0.01
 EPS_DECAY = 0.001
-TARGET_UPDATE = 2 # update target_network every 10 episodes
-# MEMORY_SIZE = 100000
-MEMORY_SIZE = 1000
+TARGET_UPDATE = 5
+MEMORY_SIZE = 100000
 LEARNING_RATE = 0.001
 
 # one episode is one complete gameplay from start till end state(gameover state)
@@ -44,6 +42,7 @@ class dqn:
         # main model,model for fitting
         self.model = self.createModel()
         # self.target_model = self.createModel()
+        
         # self.saveModel('target_model',self.target_model)
         # target network, clone of main model for predictions
         self.target_model = self.loadModel('target_model')
@@ -101,32 +100,14 @@ class dqn:
         episode_reward_list = []
         for episode in range(num_episodes):
             print('For loop entry, starting...')
+            print(episode)
             # starttime for an episode
             episode_start = time.time()
             while(True):
                 # grabs the game screen
                 gameScreen = np.array(ImageGrab.grab(
                     bbox=(260, 250, 700, 850)).convert('L'))
-                cv2.imshow('window', gameScreen)
                 current_state = gameScreen.reshape(1, 600, 440, 1)
-                if cv2.waitKey(25) & 0xFF == ord('q'):
-                    cv2.destroyAllWindows()
-                    break
-
-                # choose action based of exploration vs exploitation
-                rate = self.strategy.get_exploration_rate(self.current_step)
-                rand = random.random()
-                self.current_step += 1
-                if rate > rand:
-                    # taking random action based on epsilon
-                    action = random.randrange(NUM_ACTIONS)
-                    print('***Random action***')
-                    self.game.takeAction(action)
-                else:
-                    print('***Qvalue action***')
-                    qvalues = self.getQvalue(current_state)
-                    action = np.argmax(qvalues[0])
-                    self.game.takeAction(action)
 
                 # one game episode/gameover
                 gameOver_Status = self.game.gameOver()
@@ -135,15 +116,86 @@ class dqn:
                     episode_duration = episode_end-episode_start
                     episode_duration_list.append(episode_duration)
                     episode_reward_list.append(self.reward)
+                    # check if enough traning samples are available, train the model
+                    if self.replaymemory.can_sample(BATCH_SIZE):
+                        print('Enough batch size available, starting training...')
+                        current_stateList=[]
+                        actionList=[]
+                        next_stateList=[]
+                        rewardList=[]
+
+                        current_qs_list=[]
+                        future_qs_list=[]
+                        target_qs_list=[]
+
+                        memory = self.replaymemory.sample(BATCH_SIZE)
+                        # gets list of experience
+                        for m in memory:
+                            current_stateList.append(m.state)
+                            actionList.append(m.action)
+                            next_stateList.append(m.next_state)
+                            current_state_reward = m.reward
+                            rewardList.append(current_state_reward)
+                            qvalue_current_state = self.model.predict(m.state)
+                            current_qs_list.append(qvalue_current_state)
+                            qvalue_next_state = self.target_model.predict(m.state)
+                            future_qs_list.append(qvalue_next_state)
+                            qvalue_target = qvalue_next_state * GAMMA + current_state_reward
+                            target_qs_list.append(qvalue_target)
+                        
+                        # fit the model
+                        loss_list = []
+                        
+                        for i in range(len(current_stateList)):
+                            history = self.model.fit(x=current_stateList[i],y=target_qs_list[i],batch_size=BATCH_SIZE,verbose=1, epochs=1)
+                            loss_list.append(history.history['loss'])    
+                        if episode % TARGET_UPDATE == 0:
+                            print('Saving loss plot...')
+                            # Plot training & validation accuracy values
+                            plt.plot(range(BATCH_SIZE),loss_list)
+                            plt.title('Model loss')
+                            plt.ylabel('Loss')
+                            plt.xlabel('Btach')
+                            plot_dir = 'plots/'+str(episode)+'-loss-batch.png'
+                            plt.savefig(plot_dir, bbox_inches='tight')
+                            plt.close()
+
+
+                    # check if we have to update the model weights
+                    if episode % TARGET_UPDATE == 0:
+                        print('Updating target_model weights...')
+                        self.target_model.set_weights(self.model.get_weights())
+                        self.saveModel('model',self.target_model)
+                        self.saveModel('target_model',self.target_model)
+                    
                     self.game.restartGame()
                     break;
                 else:
+                    # choose action based of exploration vs exploitation
+                    rate = self.strategy.get_exploration_rate(self.current_step)
+                    rand = random.random()
+                    self.current_step += 1
+                    if rate > rand:
+                        # taking random action based on epsilon
+                        action = random.randrange(NUM_ACTIONS)
+                        print('***Random action***')
+                        self.game.takeAction(action)
+                    else:
+                        print('***Qvalue action***')
+                        qvalues = self.getQvalue(current_state)
+                        action = np.argmax(qvalues[0])
+                        self.game.takeAction(action)
+
                     self.reward = gameOver_Status['score']
                     next_state = np.array(ImageGrab.grab(
                     bbox=(260, 250, 700, 850)).convert('L'))
                     next_state = next_state.reshape(1, 600, 440, 1)
-                    e = self.experience(current_state,action,next_state,self.reward)
-                    self.replaymemory.push(self.experience)
+                    ex = self.experience(current_state,action,next_state,self.reward)
+                    self.replaymemory.push(ex)
+                    
+
+            
+
         # plot final results
         self.plotEpisodeDuration(num_episodes,episode_duration_list)
         self.plotEpisodeReward(num_episodes,episode_reward_list)
@@ -176,15 +228,20 @@ class dqn:
         x = range(0, num_episodes)
         y = episode_duration
         plt.plot(x,y)
+        plt.title('Survival over time')
         plt.xlabel('Episode')
         plt.ylabel('Episode duration')
-        plt.show()
+        plt.savefig('plots/episodeduration.png', bbox_inches='tight')
+        plt.close()
+
 
     # plot graph for episode duration/reward
     def plotEpisodeReward(self,num_episodes,episode_reward):
         x = range(0, num_episodes)
         y = episode_reward
         plt.plot(x,y)
-        plt.xlabel('Episode')
+        plt.title('Reward over time')
+        plt.xlabel('Episode')   
         plt.ylabel('Episode reward')
-        plt.show()
+        plt.savefig('plots/episodereward.png', bbox_inches='tight')
+        plt.close()
