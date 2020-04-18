@@ -13,14 +13,19 @@ from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
 # gameScreen.reshape(number of images(4 for stack), height(620), width(450), dimension(1))
 class game:
     def __init__(self):
+        pyautogui.FAILSAFE = False
+        self.lastScore = 0
+        self.stateScore = 0
         self.initSession()
-
+        
         print('Game world initialized.')
         # starting pos for catcher (480,795)
         self.spritepos = (480, 795)
         pyautogui.moveTo(self.spritepos)
 
     def initSession(self):
+        self.lastScore = 0
+        self.stateScore = 0
         self.d = DesiredCapabilities.CHROME
         self.d['loggingPrefs'] = { 'browser':'ALL' }
         self.driver = webdriver.Chrome('D:/chromedriver.exe',desired_capabilities=self.d)
@@ -29,7 +34,8 @@ class game:
         time.sleep(2)
         pyautogui.click(x=475, y=565)
         time.sleep(1)
-        pyautogui.moveTo(480, 795)
+        self.spritepos = (480, 795)
+        pyautogui.moveTo(self.spritepos)
 
 
     def restartGame(self):
@@ -49,8 +55,19 @@ class game:
             score_int = score_str.split(': ')[1]
             if len(score_int) <= 3:
                 score_int = int(score_int)
+
+            if score_int == self.lastScore:
+                print('Didnt catch...')
+                self.stateScore-=1
+                context['score']=self.stateScore
+            else:
+                print('Catch...')
+                self.stateScore+=2
+                context['score']=self.stateScore
+            
+            self.lastScore = score_int
             context['status'] = False
-            context['score'] = score_int
+
             return context
         elif not logs:
             print('Game over...')
@@ -61,7 +78,7 @@ class game:
 
     def noDrag(self):
         print('taking no action')
-        return None
+        self.spritepos = pyautogui.position()
 
     def leftDrag(self):
         print('dragging left')

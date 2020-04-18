@@ -5,7 +5,7 @@ import random
 from keras.models import Sequential
 from keras.layers import Dense, Dropout, Activation, Flatten
 from keras.layers import Convolution2D, MaxPooling2D
-from keras.optimizers import Adam
+from keras.optimizers import Adam,SGD
 from keras.models import model_from_json
 from PIL import ImageGrab
 import cv2
@@ -21,13 +21,13 @@ from epsilongreedy import EpsilonGreedyStrategy
 NUM_ACTIONS = 3
 IMAGE_SIZE = (600, 440, 1)
 ACTION_SPACE_SIZE = 3
-BATCH_SIZE = 64
-GAMMA = 0.999
+BATCH_SIZE = 4
+GAMMA = 0.9
 EPS_START = 1
 EPS_END = 0.01
 EPS_DECAY = 0.001
 TARGET_UPDATE = 5
-MEMORY_SIZE = 100000
+MEMORY_SIZE = 10000
 LEARNING_RATE = 0.001
 
 # one episode is one complete gameplay from start till end state(gameover state)
@@ -41,11 +41,14 @@ class dqn:
         self.game = game()
         # main model,model for fitting
         self.model = self.createModel()
-        # self.target_model = self.createModel()
-        
-        # self.saveModel('target_model',self.target_model)
+        self.model.summary()
         # target network, clone of main model for predictions
-        self.target_model = self.loadModel('target_model')
+        self.target_model = self.createModel()
+        self.target_model.set_weights(self.model.get_weights())
+        
+        
+        # self.model = self.loadModel('model')
+        # self.target_model = self.loadModel('target_model')
         self.experience = namedtuple('Experience', ('state', 'action', 'next_state', 'reward'))
 
     def createModel(self):
@@ -66,9 +69,9 @@ class dqn:
         model.add(Dense(64))
 
         # ACTION_SPACE_SIZE = how many choices (3)
-        model.add(Dense(ACTION_SPACE_SIZE, activation='linear'))
-        model.compile(loss="mse", optimizer=Adam(
-            lr=0.001), metrics=['accuracy'])
+        model.add(Dense(ACTION_SPACE_SIZE, activation='softmax'))
+        model.compile(loss="mean_squared_error", optimizer=SGD(
+            lr=LEARNING_RATE))
         return model
 
     def saveModel(self,model_name,model):
@@ -86,12 +89,12 @@ class dqn:
         json_file = open(modelpath, 'r')
         loaded_model_json = json_file.read()
         json_file.close()
-        target_model = model_from_json(loaded_model_json)
+        model = model_from_json(loaded_model_json)
         # load weights into new model
         modelh5path = model_name+'/'+model_name+'.h5'
-        target_model.load_weights(modelh5path)
+        model.load_weights(modelh5path)
         print("Loaded model from disk")
-        return target_model
+        return model
     
     def trainModel(self, num_episodes):
         # windowed mode for the game env, at the left position of your main screen.
@@ -99,8 +102,7 @@ class dqn:
         episode_duration_list = []
         episode_reward_list = []
         for episode in range(num_episodes):
-            print('For loop entry, starting...')
-            print(episode)
+            print('Episode: {}...'.format(episode))
             # starttime for an episode
             episode_start = time.time()
             while(True):
@@ -136,19 +138,28 @@ class dqn:
                             next_stateList.append(m.next_state)
                             current_state_reward = m.reward
                             rewardList.append(current_state_reward)
-                            qvalue_current_state = self.model.predict(m.state)
+                            qvalue_current_state = np.max(self.model.predict(m.state))
                             current_qs_list.append(qvalue_current_state)
-                            qvalue_next_state = self.target_model.predict(m.state)
+                            qvalue_next_state = np.max(self.target_model.predict(m.state))
                             future_qs_list.append(qvalue_next_state)
-                            qvalue_target = qvalue_next_state * GAMMA + current_state_reward
+                            qvalue_target = current_state_reward + (GAMMA * qvalue_next_state)
                             target_qs_list.append(qvalue_target)
-                        
                         # fit the model
                         loss_list = []
                         
                         for i in range(len(current_stateList)):
-                            history = self.model.fit(x=current_stateList[i],y=target_qs_list[i],batch_size=BATCH_SIZE,verbose=1, epochs=1)
+                            print('------')
+                            print(current_qs_list[i])
+                            print('------')
+                            print(target_qs_list[i])
+                            history = self.model.fit(current_stateList[i],target_qs_list[i],batch_size=BATCH_SIZE,verbose=1, epochs=1)
                             loss_list.append(history.history['loss'])    
+
+                        
+                        
+                        
+                        
+
                         if episode % TARGET_UPDATE == 0:
                             print('Saving loss plot...')
                             # Plot training & validation accuracy values
@@ -183,6 +194,7 @@ class dqn:
                     else:
                         print('***Qvalue action***')
                         qvalues = self.getQvalue(current_state)
+                        print(qvalues)
                         action = np.argmax(qvalues[0])
                         self.game.takeAction(action)
 
@@ -200,23 +212,23 @@ class dqn:
         self.plotEpisodeDuration(num_episodes,episode_duration_list)
         self.plotEpisodeReward(num_episodes,episode_reward_list)
 
-
-                
-    
-            
     # model to test the DQN aka play game
     def playModel(self):
-        statelist = []
-        gameScreen = np.array(ImageGrab.grab(
-            bbox=(250, 250, 700, 870)).convert('L'))
-        while(not self.gameOver(gameScreen)):
-            gameScreen = np.array(ImageGrab.grab(
-                bbox=(250, 250, 700, 870)).convert('L'))
-            statelist.append(gameScreen)
-            cv2.imshow('window', gameScreen)
-            if cv2.waitKey(25) & 0xFF == ord('q'):
-                cv2.destroyAllWindows()
-                break
+        
+        while(True):
+            gameOver_Status = self.game.gameOver()
+            if gameOver_Status['status']:
+                self.game.restartGame()
+            else:
+                gameScreen = np.array(ImageGrab.grab(
+                    bbox=(260, 250, 700, 850)).convert('L'))
+                current_state = gameScreen.reshape(1, 600, 440, 1)
+                print('***Taking action***')
+                qvalues = self.getQvalue(current_state)
+                action = np.argmax(qvalues[0])
+                self.game.takeAction(action)
+            
+
             
 
     # estimate q-value given a state

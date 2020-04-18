@@ -9,7 +9,7 @@ from dqn import dqn
 
 
 # Constant hyper-parameters
-NUM_EPISODES = 100
+NUM_EPISODES = 101
 TRAIN = True
 
 # helper funtion to get screen-cordinates, call it to get real time cordinates
