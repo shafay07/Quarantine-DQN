@@ -6,10 +6,10 @@ from PIL import ImageGrab
 import cv2
 from game import game
 from dqn import dqn
-
+from mss import mss
 
 # Constant hyper-parameters
-NUM_EPISODES = 101
+NUM_EPISODES = 1001
 TRAIN = True
 
 # helper funtion to get screen-cordinates, call it to get real time cordinates
@@ -27,6 +27,7 @@ def getScreenCordinates():
 
 
 def main():
+    
     
     # getScreenCordinates()
     agent = dqn()

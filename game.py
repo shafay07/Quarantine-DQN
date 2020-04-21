@@ -5,7 +5,7 @@ import cv2
 import pyautogui
 import sys
 import time
-
+from mss import mss
 from selenium import webdriver
 from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
 
@@ -31,6 +31,7 @@ class game:
         self.driver = webdriver.Chrome('D:/chromedriver.exe',desired_capabilities=self.d)
         # load the desired webpage
         self.driver.get('https://quarantine-play.firebaseapp.com/')
+        
         time.sleep(2)
         pyautogui.click(x=475, y=565)
         time.sleep(1)
@@ -75,7 +76,14 @@ class game:
             context['status'] = True
             return context
             
-
+    def getGameScreen(self):
+        with mss() as sct:
+            # Part of the screen to capture
+            bbox=(260, 250, 700, 850)
+            # Get raw pixels from the screen, save it to a Numpy array
+            capture = np.array(sct.grab(bbox))
+            capture = cv2.cvtColor(capture, cv2.COLOR_BGR2GRAY)
+            return capture
     def noDrag(self):
         print('taking no action')
         self.spritepos = pyautogui.position()

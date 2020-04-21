@@ -5,7 +5,7 @@ import random
 from keras.models import Sequential
 from keras.layers import Dense, Dropout, Activation, Flatten
 from keras.layers import Convolution2D, MaxPooling2D
-from keras.optimizers import Adam,SGD
+from keras.optimizers import Adam
 from keras.models import model_from_json
 from PIL import ImageGrab
 import cv2
@@ -19,9 +19,9 @@ from epsilongreedy import EpsilonGreedyStrategy
 
 # hyper parameters
 NUM_ACTIONS = 3
-IMAGE_SIZE = (600, 440, 1)
+IMAGE_SIZE = (600,440,1)
 ACTION_SPACE_SIZE = 3
-BATCH_SIZE = 4
+BATCH_SIZE = 32
 GAMMA = 0.9
 EPS_START = 1
 EPS_END = 0.01
@@ -39,10 +39,8 @@ class dqn:
         self.replaymemory = replaymemory(MEMORY_SIZE)
         self.strategy = EpsilonGreedyStrategy(EPS_START,EPS_END,EPS_DECAY)
         self.game = game()
-        # main model,model for fitting
+        # model is for fitting. target_model, clone of main model for predictions
         self.model = self.createModel()
-        self.model.summary()
-        # target network, clone of main model for predictions
         self.target_model = self.createModel()
         self.target_model.set_weights(self.model.get_weights())
         
@@ -56,12 +54,12 @@ class dqn:
 
         model.add(Convolution2D(32, (3, 3), input_shape=IMAGE_SIZE))
         model.add(Activation('relu'))
-        model.add(MaxPooling2D(pool_size=(2, 2)))
+        model.add(MaxPooling2D(2, 2))
         model.add(Dropout(0.2))
 
-        model.add(Convolution2D(64, (3, 3)))
+        model.add(Convolution2D(32, (3, 3)))
         model.add(Activation('relu'))
-        model.add(MaxPooling2D(pool_size=(2, 2)))
+        model.add(MaxPooling2D(2, 2))
         model.add(Dropout(0.2))
 
         # this converts our 3D feature maps to 1D feature vectors
@@ -69,9 +67,8 @@ class dqn:
         model.add(Dense(64))
 
         # ACTION_SPACE_SIZE = how many choices (3)
-        model.add(Dense(ACTION_SPACE_SIZE, activation='softmax'))
-        model.compile(loss="mean_squared_error", optimizer=SGD(
-            lr=LEARNING_RATE))
+        model.add(Dense(ACTION_SPACE_SIZE, activation='linear'))
+        model.compile(loss="mse", optimizer=Adam(lr=LEARNING_RATE), metrics=['accuracy'])
         return model
 
     def saveModel(self,model_name,model):
@@ -101,16 +98,12 @@ class dqn:
         # convert is to get grayscle image
         episode_duration_list = []
         episode_reward_list = []
+        episode_loss_list = []
         for episode in range(num_episodes):
             print('Episode: {}...'.format(episode))
             # starttime for an episode
             episode_start = time.time()
             while(True):
-                # grabs the game screen
-                gameScreen = np.array(ImageGrab.grab(
-                    bbox=(260, 250, 700, 850)).convert('L'))
-                current_state = gameScreen.reshape(1, 600, 440, 1)
-
                 # one game episode/gameover
                 gameOver_Status = self.game.gameOver()
                 if gameOver_Status['status']:
@@ -126,62 +119,55 @@ class dqn:
                         next_stateList=[]
                         rewardList=[]
 
-                        current_qs_list=[]
-                        future_qs_list=[]
-                        target_qs_list=[]
-
                         memory = self.replaymemory.sample(BATCH_SIZE)
                         # gets list of experience
+                        # ('state', 'action', 'next_state', 'reward')
                         for m in memory:
                             current_stateList.append(m.state)
                             actionList.append(m.action)
                             next_stateList.append(m.next_state)
-                            current_state_reward = m.reward
-                            rewardList.append(current_state_reward)
-                            qvalue_current_state = np.max(self.model.predict(m.state))
-                            current_qs_list.append(qvalue_current_state)
-                            qvalue_next_state = np.max(self.target_model.predict(m.state))
-                            future_qs_list.append(qvalue_next_state)
-                            qvalue_target = current_state_reward + (GAMMA * qvalue_next_state)
-                            target_qs_list.append(qvalue_target)
+                            rewardList.append(m.reward)
+                        
+                        
+                        current_stateList = np.array(current_stateList)/255
+                        qvalue_current_state = self.model.predict(current_stateList)
+                        next_stateList = np.array(next_stateList)/255
+                        qvalue_next_state = self.target_model.predict(next_stateList)
+                        x = []
+                        y = []
+                        # calculate target Qvalue
+                        for index, (state, action, next_state, reward) in enumerate(memory):
+                            max_future_q = np.max(qvalue_next_state[index])
+                            new_q = reward + GAMMA * max_future_q
+                            # Update Q value for given state
+                            current_qs = qvalue_current_state[index]
+                            current_qs[action] = new_q
+
+                            # And append to our training data
+                            x.append(state)
+                            y.append(current_qs)
+
                         # fit the model
-                        loss_list = []
-                        
-                        for i in range(len(current_stateList)):
-                            print('------')
-                            print(current_qs_list[i])
-                            print('------')
-                            print(target_qs_list[i])
-                            history = self.model.fit(current_stateList[i],target_qs_list[i],batch_size=BATCH_SIZE,verbose=1, epochs=1)
-                            loss_list.append(history.history['loss'])    
-
-                        
-                        
-                        
-                        
-
-                        if episode % TARGET_UPDATE == 0:
-                            print('Saving loss plot...')
-                            # Plot training & validation accuracy values
-                            plt.plot(range(BATCH_SIZE),loss_list)
-                            plt.title('Model loss')
-                            plt.ylabel('Loss')
-                            plt.xlabel('Btach')
-                            plot_dir = 'plots/'+str(episode)+'-loss-batch.png'
-                            plt.savefig(plot_dir, bbox_inches='tight')
-                            plt.close()
-
-
+                        history = self.model.fit(np.array(x)/255, np.array(y),batch_size=BATCH_SIZE, verbose=1, epochs=1)
+                        episode_loss_list.append(history.history['loss'][0])
+                    
+                    
                     # check if we have to update the model weights
                     if episode % TARGET_UPDATE == 0:
                         print('Updating target_model weights...')
                         self.target_model.set_weights(self.model.get_weights())
-                        self.saveModel('model',self.target_model)
+                        self.saveModel('model',self.model)
                         self.saveModel('target_model',self.target_model)
                     
                     self.game.restartGame()
                     break;
                 else:
+                    # grabs the game screen
+                    gameScreen = self.game.getGameScreen()
+                    current_state = gameScreen.reshape(600, 440, 1)
+                    # print(current_state.shape)
+                    
+                
                     # choose action based of exploration vs exploitation
                     rate = self.strategy.get_exploration_rate(self.current_step)
                     rand = random.random()
@@ -193,25 +179,36 @@ class dqn:
                         self.game.takeAction(action)
                     else:
                         print('***Qvalue action***')
-                        qvalues = self.getQvalue(current_state)
+                        qvalues = self.getTargetModelPredict(current_state)
                         print(qvalues)
                         action = np.argmax(qvalues[0])
                         self.game.takeAction(action)
 
                     self.reward = gameOver_Status['score']
-                    next_state = np.array(ImageGrab.grab(
-                    bbox=(260, 250, 700, 850)).convert('L'))
-                    next_state = next_state.reshape(1, 600, 440, 1)
+                    next_state = self.game.getGameScreen()
+                    next_state = next_state.reshape(600, 440, 1)
                     ex = self.experience(current_state,action,next_state,self.reward)
                     self.replaymemory.push(ex)
                     
 
             
-
         # plot final results
+        self.plotEpisodeLoss(num_episodes,episode_loss_list)
         self.plotEpisodeDuration(num_episodes,episode_duration_list)
         self.plotEpisodeReward(num_episodes,episode_reward_list)
 
+    
+    def getModelPredict(self,state):
+        # convert to a 4-dim (batchsize,height,width,chaneel)
+        state = np.expand_dims(state, axis=0)/255
+        return self.model.predict(state) 
+
+        
+    def getTargetModelPredict(self,state):
+        # convert to a 4-dim (batchsize,height,width,chaneel)
+        state = np.expand_dims(state, axis=0)/255
+        return self.target_model.predict(state) 
+        
     # model to test the DQN aka play game
     def playModel(self):
         
@@ -227,14 +224,18 @@ class dqn:
                 qvalues = self.getQvalue(current_state)
                 action = np.argmax(qvalues[0])
                 self.game.takeAction(action)
-            
 
-            
-
-    # estimate q-value given a state
-    def getQvalue(self, state):
-        return self.target_model.predict(state)
-
+    #plot graph for loss/episodes
+    def plotEpisodeLoss(self,num_episodes,episode_loss):
+        # Plot training & validation accuracy values
+        x = range(0, num_episodes)
+        y = episode_loss
+        plt.plot(x,y)
+        plt.title('Model loss')
+        plt.xlabel('Episode')
+        plt.ylabel('Loss')
+        plt.savefig('plots/episodeloss.png', bbox_inches='tight')
+        plt.close()           
     # plot graph for episode duration/episodes
     def plotEpisodeDuration(self,num_episodes,episode_duration):
         x = range(0, num_episodes)
@@ -245,7 +246,6 @@ class dqn:
         plt.ylabel('Episode duration')
         plt.savefig('plots/episodeduration.png', bbox_inches='tight')
         plt.close()
-
 
     # plot graph for episode duration/reward
     def plotEpisodeReward(self,num_episodes,episode_reward):
