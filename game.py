@@ -1,5 +1,6 @@
 import numpy as np
 import pytesseract as pt
+import matplotlib.pyplot as plt
 from PIL import ImageGrab, Image
 import cv2
 import pyautogui
@@ -9,16 +10,16 @@ from mss import mss
 from selenium import webdriver
 from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
 
-
-# gameScreen.reshape(number of images(4 for stack), height(620), width(450), dimension(1))
+IMG_SIZE = (84,84)
+# gameScreen.reshape(number of images(4 for stack), height(84), width(84), dimension(1))
 class game:
     def __init__(self):
+        print('Initialize Game World')
         pyautogui.FAILSAFE = False
         self.lastScore = 0
         self.stateScore = 0
         self.initSession()
-        
-        print('Game world initialized.')
+    
         # starting pos for catcher (480,795)
         self.spritepos = (480, 795)
         pyautogui.moveTo(self.spritepos)
@@ -78,11 +79,15 @@ class game:
             
     def getGameScreen(self):
         with mss() as sct:
-            # Part of the screen to capture
+            # part of the screen to capture
             bbox=(260, 250, 700, 850)
-            # Get raw pixels from the screen, save it to a Numpy array
+            # get raw pixels from the screen, save it to a Numpy array
             capture = np.array(sct.grab(bbox))
+            # convert to Grayscale
             capture = cv2.cvtColor(capture, cv2.COLOR_BGR2GRAY)
+            # resize into 84x84
+            capture = cv2.resize(capture, IMG_SIZE)
+            
             return capture
     def noDrag(self):
         print('taking no action')

@@ -19,9 +19,9 @@ from epsilongreedy import EpsilonGreedyStrategy
 
 # hyper parameters
 NUM_ACTIONS = 3
-IMAGE_SIZE = (600,440,1)
+IMAGE_SIZE = (84,84,1)
 ACTION_SPACE_SIZE = 3
-BATCH_SIZE = 32
+BATCH_SIZE = 256
 GAMMA = 0.9
 EPS_START = 1
 EPS_END = 0.01
@@ -44,6 +44,7 @@ class dqn:
         self.target_model = self.createModel()
         self.target_model.set_weights(self.model.get_weights())
         
+        print(self.model.summary())
         
         # self.model = self.loadModel('model')
         # self.target_model = self.loadModel('target_model')
@@ -52,19 +53,12 @@ class dqn:
     def createModel(self):
         model = Sequential()
 
-        model.add(Convolution2D(32, (3, 3), input_shape=IMAGE_SIZE))
-        model.add(Activation('relu'))
-        model.add(MaxPooling2D(2, 2))
-        model.add(Dropout(0.2))
+        model.add(Convolution2D(32, (8, 8),strides=(4, 4),activation='relu',input_shape=IMAGE_SIZE))
+        model.add(Convolution2D(64, (4, 4),strides=(2, 2),activation='relu'))
+        model.add(Convolution2D(64, (3, 3),strides=(1, 1),activation='relu'))
 
-        model.add(Convolution2D(32, (3, 3)))
-        model.add(Activation('relu'))
-        model.add(MaxPooling2D(2, 2))
-        model.add(Dropout(0.2))
-
-        # this converts our 3D feature maps to 1D feature vectors
         model.add(Flatten())
-        model.add(Dense(64))
+        model.add(Dense(512))
 
         # ACTION_SPACE_SIZE = how many choices (3)
         model.add(Dense(ACTION_SPACE_SIZE, activation='linear'))
@@ -164,7 +158,7 @@ class dqn:
                 else:
                     # grabs the game screen
                     gameScreen = self.game.getGameScreen()
-                    current_state = gameScreen.reshape(600, 440, 1)
+                    current_state = gameScreen.reshape(IMAGE_SIZE)
                     # print(current_state.shape)
                     
                 
@@ -186,7 +180,7 @@ class dqn:
 
                     self.reward = gameOver_Status['score']
                     next_state = self.game.getGameScreen()
-                    next_state = next_state.reshape(600, 440, 1)
+                    next_state = next_state.reshape(IMAGE_SIZE)
                     ex = self.experience(current_state,action,next_state,self.reward)
                     self.replaymemory.push(ex)
                     
