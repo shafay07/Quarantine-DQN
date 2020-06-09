@@ -18,6 +18,7 @@ class game:
         pyautogui.FAILSAFE = False
         self.lastScore = 0
         self.stateScore = 0
+        self.game_score = 0
         self.initSession()
     
         # starting pos for catcher (480,795)
@@ -39,7 +40,6 @@ class game:
         self.spritepos = (480, 795)
         pyautogui.moveTo(self.spritepos)
 
-
     def restartGame(self):
         print('Restarting the game..')
         self.initSession()
@@ -49,23 +49,28 @@ class game:
         logs = self.driver.get_log('browser')
         context={
             'status':False,
-            'score':0
+            'score':0,
+            'game_score':0
         }
         if logs:
             record = logs[-1]
             score_str = record.get("message").split('\"')[1]
+            print(score_str)
             score_int = score_str.split(': ')[1]
+            print(score_int)
             if len(score_int) <= 3:
                 score_int = int(score_int)
+                self.game_score = score_int
+                
 
             if score_int == self.lastScore:
                 print('Didnt catch...')
                 self.stateScore-=1
-                context['score']=self.stateScore
+                context['score']=-1
             else:
                 print('Catch...')
                 self.stateScore+=2
-                context['score']=self.stateScore
+                context['score']=0.1
             
             self.lastScore = score_int
             context['status'] = False
@@ -75,9 +80,11 @@ class game:
             print('Game over...')
             self.driver.quit()  
             context['status'] = True
+            context['game_score']=self.game_score
             return context
             
     def getGameScreen(self):
+        print('Getting game state...')
         with mss() as sct:
             # part of the screen to capture
             bbox=(260, 250, 700, 850)
@@ -87,8 +94,7 @@ class game:
             capture = cv2.cvtColor(capture, cv2.COLOR_BGR2GRAY)
             # resize into 84x84
             capture = cv2.resize(capture, IMG_SIZE)
-            
-            return capture
+        return capture
     def noDrag(self):
         print('taking no action')
         self.spritepos = pyautogui.position()

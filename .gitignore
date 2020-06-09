@@ -124,6 +124,3 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
-# DQN models
-model/
-target_model/

@@ -9,8 +9,8 @@ from dqn import dqn
 from mss import mss
 
 # Constant hyper-parameters
-NUM_EPISODES = 1001
-TRAIN = True
+NUM_EPISODES = 5
+TRAIN = False
 
 # helper funtion to get screen-cordinates, call it to get real time cordinates
 
@@ -27,8 +27,6 @@ def getScreenCordinates():
 
 
 def main():
-    
-    
     # getScreenCordinates()
     agent = dqn()
     if TRAIN:

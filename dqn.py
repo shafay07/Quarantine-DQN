@@ -19,16 +19,17 @@ from epsilongreedy import EpsilonGreedyStrategy
 
 # hyper parameters
 NUM_ACTIONS = 3
-IMAGE_SIZE = (84,84,1)
+IMAGE_SIZE = (84,84,4)
+STACK_IMAGE_SIZE = (1,84,84,4)
 ACTION_SPACE_SIZE = 3
-BATCH_SIZE = 256
-GAMMA = 0.9
+BATCH_SIZE = 16
+GAMMA = 0.99
 EPS_START = 1
-EPS_END = 0.01
+EPS_END = 0.001
 EPS_DECAY = 0.001
-TARGET_UPDATE = 5
+TARGET_UPDATE = 2
 MEMORY_SIZE = 10000
-LEARNING_RATE = 0.001
+LEARNING_RATE = 1e-4
 
 # one episode is one complete gameplay from start till end state(gameover state)
 class dqn:
@@ -43,11 +44,11 @@ class dqn:
         self.model = self.createModel()
         self.target_model = self.createModel()
         self.target_model.set_weights(self.model.get_weights())
-        
-        print(self.model.summary())
-        
-        # self.model = self.loadModel('model')
-        # self.target_model = self.loadModel('target_model')
+
+        '''self.model = self.loadModel('model')
+        self.model.compile(loss="mse", optimizer=Adam(lr=LEARNING_RATE), metrics=['accuracy'])
+        self.target_model = self.loadModel('target_model')'''
+
         self.experience = namedtuple('Experience', ('state', 'action', 'next_state', 'reward'))
 
     def createModel(self):
@@ -88,11 +89,17 @@ class dqn:
         return model
     
     def trainModel(self, num_episodes):
-        # windowed mode for the game env, at the left position of your main screen.
-        # convert is to get grayscle image
+        last_time = time.time()
+        current_game_state = self.game.getGameScreen()
+        current_state_stack = np.stack((current_game_state,current_game_state,current_game_state,current_game_state), axis=2) # stack 4 images to create placeholder input
+        current_state_stack = current_state_stack.reshape(IMAGE_SIZE)  #1*84*84*4
+
+
         episode_duration_list = []
         episode_reward_list = []
         episode_loss_list = []
+
+
         for episode in range(num_episodes):
             print('Episode: {}...'.format(episode))
             # starttime for an episode
@@ -104,7 +111,7 @@ class dqn:
                     episode_end = time.time()
                     episode_duration = episode_end-episode_start
                     episode_duration_list.append(episode_duration)
-                    episode_reward_list.append(self.reward)
+                    episode_reward_list.append(gameOver_Status['game_score'])
                     # check if enough traning samples are available, train the model
                     if self.replaymemory.can_sample(BATCH_SIZE):
                         print('Enough batch size available, starting training...')
@@ -123,9 +130,9 @@ class dqn:
                             rewardList.append(m.reward)
                         
                         
-                        current_stateList = np.array(current_stateList)/255
+                        current_stateList = np.array(current_stateList)
                         qvalue_current_state = self.model.predict(current_stateList)
-                        next_stateList = np.array(next_stateList)/255
+                        next_stateList = np.array(next_stateList)
                         qvalue_next_state = self.target_model.predict(next_stateList)
                         x = []
                         y = []
@@ -142,7 +149,7 @@ class dqn:
                             y.append(current_qs)
 
                         # fit the model
-                        history = self.model.fit(np.array(x)/255, np.array(y),batch_size=BATCH_SIZE, verbose=1, epochs=1)
+                        history = self.model.fit(np.array(x), np.array(y),batch_size=BATCH_SIZE, verbose=1, epochs=1)
                         episode_loss_list.append(history.history['loss'][0])
                     
                     
@@ -156,12 +163,6 @@ class dqn:
                     self.game.restartGame()
                     break;
                 else:
-                    # grabs the game screen
-                    gameScreen = self.game.getGameScreen()
-                    current_state = gameScreen.reshape(IMAGE_SIZE)
-                    # print(current_state.shape)
-                    
-                
                     # choose action based of exploration vs exploitation
                     rate = self.strategy.get_exploration_rate(self.current_step)
                     rand = random.random()
@@ -173,15 +174,18 @@ class dqn:
                         self.game.takeAction(action)
                     else:
                         print('***Qvalue action***')
-                        qvalues = self.getTargetModelPredict(current_state)
+                        qvalues = self.getTargetModelPredict(current_state_stack.reshape(STACK_IMAGE_SIZE))
                         print(qvalues)
                         action = np.argmax(qvalues[0])
                         self.game.takeAction(action)
-
                     self.reward = gameOver_Status['score']
+                    print(self.reward)
                     next_state = self.game.getGameScreen()
-                    next_state = next_state.reshape(IMAGE_SIZE)
-                    ex = self.experience(current_state,action,next_state,self.reward)
+                    print('fps: {0}'.format(1 / (time.time()-last_time))) # helpful for measuring frame rate
+                    last_time = time.time()
+                    next_state_stack = np.append(next_state, current_state_stack[:, :, :3])
+                    next_state_stack = next_state_stack.reshape(IMAGE_SIZE) 
+                    ex = self.experience(current_state_stack,action,next_state_stack,self.reward)
                     self.replaymemory.push(ex)
                     
 
@@ -194,35 +198,48 @@ class dqn:
     
     def getModelPredict(self,state):
         # convert to a 4-dim (batchsize,height,width,chaneel)
-        state = np.expand_dims(state, axis=0)/255
         return self.model.predict(state) 
 
         
     def getTargetModelPredict(self,state):
         # convert to a 4-dim (batchsize,height,width,chaneel)
-        state = np.expand_dims(state, axis=0)/255
         return self.target_model.predict(state) 
         
     # model to test the DQN aka play game
     def playModel(self):
+        current_game_state = self.game.getGameScreen()
+        current_state_stack = np.stack((current_game_state,current_game_state,current_game_state,current_game_state), axis=2) # stack 4 images to create placeholder input
+        current_state_stack = current_state_stack.reshape(STACK_IMAGE_SIZE)  #1*84*84*4
         
         while(True):
+            gameOver_Status={
+                'status':False,
+                'score':0,
+                'game_score':0
+                }
+            last_time = time.time()
             gameOver_Status = self.game.gameOver()
             if gameOver_Status['status']:
                 self.game.restartGame()
             else:
-                gameScreen = np.array(ImageGrab.grab(
-                    bbox=(260, 250, 700, 850)).convert('L'))
-                current_state = gameScreen.reshape(1, 600, 440, 1)
-                print('***Taking action***')
-                qvalues = self.getQvalue(current_state)
+                print('***Qvalue action***')
+                qvalues = self.getTargetModelPredict(current_state_stack)
+                print(qvalues)
                 action = np.argmax(qvalues[0])
                 self.game.takeAction(action)
+                gameOver_Status = self.game.gameOver()
+                self.reward = gameOver_Status['score']
+
+                next_state = self.game.getGameScreen()
+                print('fps: {0}'.format(1 / (time.time()-last_time))) # helpful for measuring frame rate
+                last_time = time.time()
+                next_state_stack = np.append(next_state, current_state_stack[:, :, :, :3])
+                next_state_stack = next_state_stack.reshape(STACK_IMAGE_SIZE)
 
     #plot graph for loss/episodes
     def plotEpisodeLoss(self,num_episodes,episode_loss):
         # Plot training & validation accuracy values
-        x = range(0, num_episodes)
+        x = range(0, len(episode_loss))
         y = episode_loss
         plt.plot(x,y)
         plt.title('Model loss')
@@ -232,7 +249,7 @@ class dqn:
         plt.close()           
     # plot graph for episode duration/episodes
     def plotEpisodeDuration(self,num_episodes,episode_duration):
-        x = range(0, num_episodes)
+        x = range(0, len(episode_duration))
         y = episode_duration
         plt.plot(x,y)
         plt.title('Survival over time')
@@ -243,7 +260,7 @@ class dqn:
 
     # plot graph for episode duration/reward
     def plotEpisodeReward(self,num_episodes,episode_reward):
-        x = range(0, num_episodes)
+        x = range(0, len(episode_reward))
         y = episode_reward
         plt.plot(x,y)
         plt.title('Reward over time')
