@@ -6,9 +6,11 @@ from PIL import ImageGrab
 import cv2
 from game import game
 from dqn import dqn
+from mss import mss
+
 # Constant hyper-parameters
-NUM_EPISODES = 50
-TRAIN = True
+NUM_EPISODES = 5
+TRAIN = False
 
 # helper funtion to get screen-cordinates, call it to get real time cordinates
 

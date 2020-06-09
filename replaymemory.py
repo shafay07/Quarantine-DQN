@@ -6,7 +6,7 @@ class replaymemory:
         self.capacity = capacity
         self.memory = []  # memory structure to hold experience
         self.push_counter = 0  # counter to see how many experiences we have pushed
-        self.batchsize = 50
+        self.batchsize = 256
 
     # add an experience to memory
     def push(self, experience):
